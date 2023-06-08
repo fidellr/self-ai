@@ -25,7 +25,6 @@ func DefineNetwork() *gorgonia.ExprGraph {
 	b := gorgonia.NewMatrix(g, tensor.Float64, gorgonia.WithShape(1), gorgonia.WithName("b"))
 
 	output := gorgonia.Must(gorgonia.Add(gorgonia.Must(gorgonia.Mul(x, w)), b))
-	// prediction := gorgonia.Must(gorgonia.Argmax(output, 1))
 	prediction := gorgonia.Must(gorgonia.Max(output, 1))
 
 	gorgonia.Read(prediction, y.Value().Data().(*gorgonia.Value))
