@@ -76,6 +76,22 @@ func LoadData(filePath string) (tensor.Tensor, error) {
 	return dataTensor, nil
 }
 
+type singleIndexSlice struct {
+	index int
+}
+
+func (s singleIndexSlice) Start() int {
+	return s.index
+}
+
+func (s singleIndexSlice) End() int {
+	return s.index + 1
+}
+
+func (s singleIndexSlice) Step() int {
+	return 1
+}
+
 // SplitData splits the data tensor into training and testing sets based on the given ratio
 func SplitData(data tensor.Tensor, trainRatio float64) (tensor.Tensor, tensor.Tensor, error) {
 	// Get the number of samples in the data
@@ -97,21 +113,49 @@ func SplitData(data tensor.Tensor, trainRatio float64) (tensor.Tensor, tensor.Te
 	shape[0] = numTrain
 
 	// Create a new tensor for training data
-	trainDataView, err := data.Slice(indices[:numTrain]...)
-	if err != nil {
-		return nil, nil, err
+	trainData := tensor.New(tensor.WithShape(shape...), tensor.Of(data.Dtype()))
+
+	// Populate training data
+	for i := 0; i < numTrain; i++ {
+		dstTrainSlice, err := trainData.Slice(singleIndexSlice{index: indices[i]})
+		if err != nil {
+			fmt.Println("dstTrainSlice:", err, dstTrainSlice, numTrain)
+			return nil, nil, err
+		}
+		srcTrainSlice, err := data.Slice(singleIndexSlice{index: indices[i]})
+		if err != nil {
+			fmt.Println("srcTrainSlice:", err)
+			return nil, nil, err
+		}
+		if err = tensor.Copy(dstTrainSlice, srcTrainSlice); err != nil {
+			fmt.Println("copyTrain:", err)
+			return nil, nil, err
+		}
 	}
-	trainData := trainDataView.Materialize().Reshape(shape...)
 
 	// Update the shape for testing data
 	shape[0] = numTest
 
 	// Create a new tensor for testing data
-	testDataView, err := data.Slice(indices[numTrain:]...)
-	if err != nil {
-		return nil, nil, err
+	testData := tensor.New(tensor.WithShape(shape...), tensor.Of(data.Dtype()))
+
+	// Populate testing data
+	for i := 0; i < numTest; i++ {
+		dstTestSlice, err := testData.Slice(singleIndexSlice{index: indices[i+numTrain]})
+		if err != nil {
+			fmt.Println("dstTestSlice:", err)
+			return nil, nil, err
+		}
+		srcTestSlice, err := data.Slice(singleIndexSlice{index: indices[i+numTrain]})
+		if err != nil {
+			fmt.Println("srcTestSlice:", err)
+			return nil, nil, err
+		}
+		if err = tensor.Copy(dstTestSlice, srcTestSlice); err != nil {
+			fmt.Println("copyTest:", err)
+			return nil, nil, err
+		}
 	}
-	testData := testDataView.Materialize().Reshape(shape...)
 
 	return trainData, testData, nil
 }
