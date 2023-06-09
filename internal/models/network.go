@@ -40,9 +40,19 @@ func DefineNetwork() *Model {
 	return &Model{g, pred, loss, w, b, x, y}
 }
 
-func (m *Model) inputTensor(g *gorgonia.ExprGraph, data []float64, shape ...int) *gorgonia.Node {
-	t := gorgonia.NewTensor(g, gorgonia.Float32, len(shape), gorgonia.WithShape(shape...), gorgonia.WithValue(data))
-	return gorgonia.NodeFromAny(g, t, gorgonia.WithName("input"))
+func (m *Model) inputTensor(g *gorgonia.ExprGraph, data []float64, shape ...int) (*gorgonia.Node, error) {
+	expectedSize := 1
+	for _, dim := range shape {
+		expectedSize *= dim
+	}
+
+	if len(data) != expectedSize {
+		return nil, fmt.Errorf("inputTensor: data size doesn't match the specified shape")
+	}
+
+	t := tensor.New(tensor.WithShape(shape...), tensor.WithBacking(data))
+	input := gorgonia.NewTensor(g, t.Dtype(), t.Dims(), gorgonia.WithShape(t.Shape()...), gorgonia.WithName("input"))
+	return input, nil
 }
 
 func (m *Model) outputTensor(g *gorgonia.ExprGraph, data []float64, shape ...int) *gorgonia.Node {
@@ -93,8 +103,12 @@ func (m *Model) Train(g *gorgonia.ExprGraph, data tensor.Tensor) {
 	for i := 0; i < numIterations; i++ {
 		// Forward pass to compute the loss
 		dataVals := data.Data().([]float64)
-		fmt.Println("dataVals:", dataVals)
-		if err := gorgonia.Let(m.X, m.inputTensor(g, dataVals, shapes...)); err != nil {
+		input, err := m.inputTensor(g, dataVals, shapes...)
+
+		if err != nil {
+			log.Fatalf("input: %v", err)
+		}
+		if err = gorgonia.Let(m.X, input); err != nil {
 			log.Fatal("inputTensor:", err)
 		}
 		if err := gorgonia.Let(m.Y, m.outputTensor(g, dataVals, shapes...)); err != nil {
