@@ -31,9 +31,10 @@ func main() {
 	model := &models.Model{
 		Graph: gorgonia.NewGraph(),
 	}
+	model = models.DefineNetwork()
 
 	// Train the model
-	model.Train(trainData)
+	model.Train(model.Graph, trainData)
 
 	// Evaluate the model on test data
 	accuracy := model.Evaluate(testData)
