@@ -24,7 +24,7 @@ func main() {
 	// Split data into training and testing sets
 	trainData, testData, err := utils.SplitData(data, 0.8) // 80% for training, 20% for testing
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("SplitData: ", (err))
 	}
 
 	// Define your neural network architecture
