@@ -71,9 +71,13 @@ func LoadData(filePath string) (tensor.Tensor, error) {
 	}
 
 	// Create a tensor from the data slice
-	dataTensor := tensor.New(tensor.WithShape(len(data)), tensor.WithBacking(data))
+	dataTensor := tensor.New(
+		tensor.WithShape(len(data), 1),
+		tensor.Of(tensor.Float64),
+		tensor.WithBacking(data),
+	)
 
-	fmt.Println("LoadData.dataTensor:", dataTensor)
+	fmt.Println("LoadData.dataTensor:", dataTensor.Data())
 	return dataTensor, nil
 }
 
@@ -110,6 +114,9 @@ func (s *singleIndexSlice) Reset() {
 	s.start = 0
 	s.end = s.stride
 }
+func (s *singleIndexSlice) String() string {
+	return fmt.Sprintf("Slice(%d, %d, 1)", s.index, s.index+1)
+}
 
 // SplitData splits the data tensor into training and testing sets based on the given ratio
 func SplitData(data tensor.Tensor, trainRatio float64) (tensor.Tensor, tensor.Tensor, error) {
@@ -137,25 +144,23 @@ func SplitData(data tensor.Tensor, trainRatio float64) (tensor.Tensor, tensor.Te
 
 	// Convert the data to a tensor
 	// TODO: FIX THIS!!!!
-	dataTensor := tensor.New(tensor.WithShape(numSamples, 1), tensor.Of(tensor.Float64), tensor.WithBacking(data))
-
 	// Calculate the number of samples for training and testing
 	numTrain := int(float64(numSamples) * trainRatio)
 	numTest := numSamples - numTrain
 
 	// Create a range of indices for shuffling
-	indices := rand.Perm(numSamples)
+	indices := make([]int, numSamples)
 	for i := 0; i < numSamples; i++ {
 		indices[i] = i
 	}
 	rand.Shuffle(numSamples, func(i, j int) { indices[i], indices[j] = indices[j], indices[i] })
 
 	// Get the shape of the data tensor
-	shape := dataTensor.Shape()
+	shape := data.Shape()
 	shape[0] = numTrain
 
 	// Create a new tensor for training data
-	trainData := tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(shape...))
+	trainData := tensor.New(tensor.Of(tensor.Float64), tensor.WithShape(shape...))
 
 	// Populate training data
 	for i := 0; i < numTrain; i++ {
@@ -170,7 +175,7 @@ func SplitData(data tensor.Tensor, trainRatio float64) (tensor.Tensor, tensor.Te
 			return nil, nil, err
 		}
 
-		dstTrainData := tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(shape...))
+		dstTrainData := tensor.New(tensor.Of(tensor.Float64), tensor.WithShape(shape...))
 		if err := tensor.Copy(dstTrainData, srcTrainData); err != nil {
 			fmt.Println("tensor.Copy error:", err)
 			return nil, nil, err
@@ -181,7 +186,8 @@ func SplitData(data tensor.Tensor, trainRatio float64) (tensor.Tensor, tensor.Te
 			if err != nil {
 				return nil, nil, err
 			}
-			dstTrainData.SetAt(value.(float32)+1, j, 0) // Assign modified value back to the tensor
+			floatValue := value.(float64)
+			dstTrainData.SetAt(floatValue+1, j, 0) // Assign modified value back to the tensor
 		}
 
 		if err := tensor.Copy(dstTrainData, srcTrainData); err != nil {
@@ -194,16 +200,17 @@ func SplitData(data tensor.Tensor, trainRatio float64) (tensor.Tensor, tensor.Te
 	shape[0] = numTest
 
 	// Create a new tensor for testing data
-	testData := tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(shape...))
+	testData := tensor.New(tensor.Of(tensor.Float64), tensor.WithShape(shape...))
 
 	// Populate testing data
 	for i := 0; i < numTest; i++ {
-		index, err := it.Next()
+		index := indices[numTrain+i] // Use the correct index from the shuffled indices
+		_, err := it.Next()
 		if err != nil {
 			return nil, nil, err
 		}
 
-		srcSlice := tensor.New(tensor.Of(tensor.Int), tensor.WithShape(1))
+		srcSlice := tensor.New(tensor.Of(tensor.Float64), tensor.WithShape(1))
 		srcSlice.Set(0, float64(index))
 
 		srcTestData, err := srcSlice.Slice()
@@ -212,7 +219,7 @@ func SplitData(data tensor.Tensor, trainRatio float64) (tensor.Tensor, tensor.Te
 			return nil, nil, err
 		}
 
-		dstTestData := tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(shape...))
+		dstTestData := tensor.New(tensor.Of(tensor.Float64), tensor.WithShape(shape...))
 		if err := tensor.Copy(dstTestData, srcTestData); err != nil {
 			fmt.Println("tensor.Copy error:", err)
 			return nil, nil, err
@@ -223,10 +230,10 @@ func SplitData(data tensor.Tensor, trainRatio float64) (tensor.Tensor, tensor.Te
 			if err != nil {
 				return nil, nil, err
 			}
-			dstTestData.SetAt(value.(float32)+1, j, 0) // Assign modified value back to the tensor
+			dstTestData.SetAt(value.(float64)+1, j, 0) // Assign modified value back to the tensor
 		}
 
-		testSlice, err := testData.Slice(&singleIndexSlice{index: i})
+		testSlice := tensor.New(tensor.Of(tensor.Float64), tensor.WithShape(1))
 		if err != nil {
 			return nil, nil, err
 		}
