@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -72,86 +73,120 @@ func LoadData(filePath string) (tensor.Tensor, error) {
 	// Create a tensor from the data slice
 	dataTensor := tensor.New(tensor.WithShape(len(data)), tensor.WithBacking(data))
 
-	fmt.Println("dataTensor:", dataTensor)
+	fmt.Println("LoadData.dataTensor:", dataTensor)
 	return dataTensor, nil
 }
 
 type singleIndexSlice struct {
-	index int
+	index  int
+	data   interface{}
+	stride int
+	start  int
+	end    int
 }
 
-func (s singleIndexSlice) Start() int {
+func (s *singleIndexSlice) Start() int {
 	return s.index
 }
 
-func (s singleIndexSlice) End() int {
-	return s.index + 1
+func (s *singleIndexSlice) Step() int {
+	return 1
 }
 
-func (s singleIndexSlice) Step() int {
-	return 1
+func (s *singleIndexSlice) End() int {
+	return s.end
+}
+
+func (s *singleIndexSlice) Next() {
+	s.start += s.stride
+	s.end += s.stride
+}
+
+func (s *singleIndexSlice) At(i int) interface{} {
+	return reflect.ValueOf(s.data).Index(s.start + i*s.stride).Interface()
+}
+
+func (s *singleIndexSlice) Reset() {
+	s.start = 0
+	s.end = s.stride
 }
 
 // SplitData splits the data tensor into training and testing sets based on the given ratio
 func SplitData(data tensor.Tensor, trainRatio float64) (tensor.Tensor, tensor.Tensor, error) {
 	// Get the number of samples in the data
 	numSamples := data.Shape()[0]
-	fmt.Println("shape & size:", data.Shape(), data.Size())
+
+	// Convert the data to []float32
+	// dataFloat32 := make([]float32, numSamples)
+	it := data.Iterator()
+	// for i := 0; ; i++ {
+	// 	index, err := it.Next()
+	// 	if err != nil {
+	// 		if err == io.EOF {
+	// 			break
+	// 		}
+	// 		return nil, nil, err
+	// 	}
+
+	// 	value, err := data.At(index)
+	// 	if err != nil {
+	// 		return nil, nil, err
+	// 	}
+	// 	dataFloat32[i] = value.(float32)
+	// }
+
+	// Convert the data to a tensor
+	// TODO: FIX THIS!!!!
+	dataTensor := tensor.New(tensor.WithShape(numSamples, 1), tensor.Of(tensor.Float64), tensor.WithBacking(data))
 
 	// Calculate the number of samples for training and testing
 	numTrain := int(float64(numSamples) * trainRatio)
 	numTest := numSamples - numTrain
 
 	// Create a range of indices for shuffling
-	indices := make([]int, numSamples)
+	indices := rand.Perm(numSamples)
 	for i := 0; i < numSamples; i++ {
 		indices[i] = i
 	}
 	rand.Shuffle(numSamples, func(i, j int) { indices[i], indices[j] = indices[j], indices[i] })
 
 	// Get the shape of the data tensor
-	shape := data.Shape()
+	shape := dataTensor.Shape()
 	shape[0] = numTrain
 
 	// Create a new tensor for training data
-	trainData := tensor.New(tensor.WithShape(shape...), tensor.Of(data.Dtype()))
+	trainData := tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(shape...))
 
 	// Populate training data
 	for i := 0; i < numTrain; i++ {
-		index := indices[i]
-
-		// Check if the index is within bounds
-		if index >= numTrain {
-			continue
+		_, err := it.Next()
+		if err != nil {
+			return nil, nil, err
 		}
 
-		srcSlice := singleIndexSlice{index}
-
-		srcTrainData, err := data.Slice(srcSlice)
+		srcTrainData := tensor.New(tensor.Of(data.Dtype()), tensor.WithShape(numTrain))
 		if err != nil {
 			fmt.Println("data.Slice Train error:", err)
 			return nil, nil, err
 		}
 
-		// dstSlice := singleIndexSlice{index: i}
-
-		dstTrainData := tensor.New(tensor.Of(data.Dtype()), tensor.WithShape(shape...))
+		dstTrainData := tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(shape...))
 		if err := tensor.Copy(dstTrainData, srcTrainData); err != nil {
 			fmt.Println("tensor.Copy error:", err)
 			return nil, nil, err
 		}
 
-		// Use the dstTrainData for further processing or assignment
-		// For example, you can access the elements of dstTrainData using indexing
 		for j := 0; j < dstTrainData.Shape()[0]; j++ {
-			value, err := dstTrainData.At(j) // Access element at index j
+			value, err := dstTrainData.At(j, 0) // Access element at index j
 			if err != nil {
 				return nil, nil, err
 			}
-			// Process or assign the value as needed #CORE LOGIC OF DATA PROCESSING (FEEL FREE TO PR)
-			// For example:
-			dstTrainData.SetAt(value.(float64)+1, j) // Assign modified value back to the tensor
-			// fmt.Println("value", value)              // Process the value
+			dstTrainData.SetAt(value.(float32)+1, j, 0) // Assign modified value back to the tensor
+		}
+
+		if err := tensor.Copy(dstTrainData, srcTrainData); err != nil {
+			fmt.Println("tensor.Copy error:", err)
+			return nil, nil, err
 		}
 	}
 
@@ -159,43 +194,47 @@ func SplitData(data tensor.Tensor, trainRatio float64) (tensor.Tensor, tensor.Te
 	shape[0] = numTest
 
 	// Create a new tensor for testing data
-	testData := tensor.New(tensor.WithShape(shape...), tensor.Of(data.Dtype()))
+	testData := tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(shape...))
 
 	// Populate testing data
 	for i := 0; i < numTest; i++ {
-		index := indices[i+numTrain]
-
-		// Check if the index is within bounds
-		if index >= numTest {
-			continue
-		}
-
-		srcSlice := singleIndexSlice{index: index}
-		srcTestData, err := data.Slice(srcSlice)
+		index, err := it.Next()
 		if err != nil {
-			fmt.Println("data.Slice error:", err)
 			return nil, nil, err
 		}
 
-		dstTestData := tensor.New(tensor.Of(data.Dtype()), tensor.WithShape(shape...))
+		srcSlice := tensor.New(tensor.Of(tensor.Int), tensor.WithShape(1))
+		srcSlice.Set(0, float64(index))
+
+		srcTestData, err := srcSlice.Slice()
+		if err != nil {
+			fmt.Println("tensor.NewViewFrom error:", err)
+			return nil, nil, err
+		}
+
+		dstTestData := tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(shape...))
 		if err := tensor.Copy(dstTestData, srcTestData); err != nil {
 			fmt.Println("tensor.Copy error:", err)
 			return nil, nil, err
 		}
 
-		// Use the dstTestData for further processing or assignment
 		for j := 0; j < dstTestData.Shape()[0]; j++ {
-			_, err := dstTestData.At(j) // Access element at index j
+			value, err := dstTestData.At(j, 0) // Access element at index j
 			if err != nil {
 				return nil, nil, err
 			}
-			// fmt.Println("value:", value)
-
-			// Process or assign the value as needed
-			// For example:
-			// dstTestData.SetAt(value+1, j) // Assign modified value back to the tensor
-			// fmt.Println(value) // Process the value
+			dstTestData.SetAt(value.(float32)+1, j, 0) // Assign modified value back to the tensor
 		}
+
+		testSlice, err := testData.Slice(&singleIndexSlice{index: i})
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if err = tensor.Copy(testSlice, dstTestData); err != nil {
+			return nil, nil, err
+		}
+
 	}
 
 	return trainData, testData, nil
