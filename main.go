@@ -29,13 +29,16 @@ func main() {
 
 	// Define your neural network architecture
 	model := &models.Model{
-		Graph: gorgonia.NewGraph(),
+		Graph:      gorgonia.NewGraph(),
+		HiddenSize: 10, // Set the desired number of hidden units
 	}
-	model = models.DefineNetwork()
 
 	// Train the model
-	model.Train(model.Graph, trainData)
-
+	// TODO FIX: ADD LABEL DATA!
+	err = model.Train(model.Graph, trainData, labels, 10, 0.01) // Pass the training data, labels, epochs, and learning rate
+	if err != nil {
+		log.Fatal("Train: ", err)
+	}
 	// Evaluate the model on test data
 	accuracy := model.Evaluate(testData)
 	fmt.Printf("Accuracy: %.2f%%\n", accuracy*100)
